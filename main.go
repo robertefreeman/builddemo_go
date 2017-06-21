@@ -1,9 +1,9 @@
 package main
 
 import (
-	"net/http"
 	"sync"
 	"github.com/garyburd/redigo/redis"
+	"net/http"
 	"fmt"
 )
 
@@ -18,7 +18,7 @@ func newPool() *redis.Pool {
 		MaxIdle:   80,
 		MaxActive: 12000,
 		Dial: func() (redis.Conn, error) {
-			return redis.Dial("tcp", "redis:6379")
+			return redis.Dial("tcp", "localhost:6379")
 		},
 	}
 }
