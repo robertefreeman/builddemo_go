@@ -4,49 +4,72 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
+	"sync"
+	"github.com/garyburd/redigo/redis"
+	"fmt"
 )
 
-func main() {
-	fs := http.FileServer(http.Dir("static"))
-	http.Handle("/static/", http.StripPrefix("/static/", fs))
-	http.HandleFunc("/", serveTemplate)
-
-	log.Println("Listening...")
-	http.ListenAndServe(":3000", nil)
+type Page struct {
+	Body  string
+	Title string
+	Name  string
 }
 
+var mu sync.Mutex
+
+// Global pool that handlers can grab a connection from
+var pool = newPool()
+
+// Pool configuration
+func newPool() *redis.Pool {
+	return &redis.Pool{
+		MaxIdle:   80,
+		MaxActive: 12000,
+		Dial: func() (redis.Conn, error) {
+			return redis.Dial("tcp", "localhost:6379")
+		},
+	}
+}
+func ignoreIcon(res http.ResponseWriter, req *http.Request) {}
+
+
 func serveTemplate(w http.ResponseWriter, r *http.Request) {
-	lp := filepath.Join("templates", "layout.html")
-	fp := filepath.Join("templates", filepath.Clean(r.URL.Path))
 
-	// Return a 404 if the template doesn't exist
-	info, err := os.Stat(fp)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
-	}
+	tmpl := template.New("index.html") //create a new template with some name
+	tmpl, _ = tmpl.ParseFiles("index.html")
 
-	// Return a 404 if the request is for a directory
-	if info.IsDir() {
-		http.NotFound(w, r)
-		return
-	}
+	count := counter()
+	bodString := fmt.Sprintf("Hello World! This page has been viewed %v times", count)
+	p := Page{Body: bodString, Title: `Docker EE CI/CD demo`, Name: "Robert"}
 
-	tmpl, err := template.ParseFiles(lp, fp)
-	if err != nil {
-		// Log the detailed error
-		log.Println(err.Error())
-		// Return a generic "Internal Server Error" message
-		http.Error(w, http.StatusText(500), 500)
-		return
-	}
-
-	if err := tmpl.ExecuteTemplate(w, "layout", nil); err != nil {
+	if err := tmpl.Execute(w, p); err != nil {
 		log.Println(err.Error())
 		http.Error(w, http.StatusText(500), 500)
 	}
+}
+
+// increment counter by one and return total counter value
+func counter() int {
+	// Grab a connection and make sure to close it with defer
+	conn := pool.Get()
+	defer conn.Close()
+	mu.Lock()
+	conn.Do("INCR", "viewCount")
+	mu.Unlock()
+	count, _ := redis.Int(conn.Do("GET", "viewCount"))
+	return count
+}
+
+/*
+func HttpIndexFileHandler(response http.ResponseWriter, request *http.Request) {
+	//fmt.Fprintf(w, "Hi from e %s!", r.URL.Path[1:])
+	http.ServeFile(response, request, "example.html")
+}
+*/
+
+func main() {
+	http.HandleFunc("/favicon.ico", ignoreIcon)
+	http.HandleFunc("/", serveTemplate)
+	log.Println("Server Listening...")
+	http.ListenAndServe(":8000", nil)
 }

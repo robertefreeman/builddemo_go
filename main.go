@@ -1,4 +1,6 @@
+/*
 package main
+
 
 import (
 	"sync"
@@ -45,3 +47,4 @@ func main() {
 	http.HandleFunc("/", counter)
 	http.ListenAndServe(":8000", nil)
 }
+*/
